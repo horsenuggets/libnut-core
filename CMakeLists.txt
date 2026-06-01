@@ -52,7 +52,14 @@ set(INCLUDES "")
 
 if (UNIX AND APPLE)
     message(STATUS "macOS build")
-    list(APPEND LIBS "-framework ApplicationServices" "-framework Cocoa")
+    # ScreenCaptureKit is the supported screen-capture API since macOS 12.3;
+    # the prior CGDisplayCreateImageForRect was removed in the macOS 15 SDK.
+    # Pin the deployment target so the SCK symbols are available at link time
+    # and AVAILABLE checks in the source compile out cleanly on older runners.
+    if (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS 12.3)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET 12.3)
+    endif()
+    list(APPEND LIBS "-framework ApplicationServices" "-framework Cocoa" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo")
 elseif (WIN32)
     message(STATUS "Windows build")
 elseif (UNIX AND NOT APPLE)
