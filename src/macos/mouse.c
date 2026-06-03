@@ -57,7 +57,30 @@ void calculateDeltas(CGEventRef *event, MMPoint point) {
 /**
  * Move the mouse to a specific point.
  * @param point The coordinates to move the mouse to (x, y).
- */
+ *
+ * macOS-specific synchronization note:
+ *   `CGEventPost(kCGHIDEventTap, ...)` injects a synthetic move event into
+ *   the HID event tap. WindowServer processes the queue asynchronously, so
+ *   a subsequent call to `CGEventGetLocation(CGEventCreate(NULL))` (which
+ *   is what `getMousePos()` in this file does) can read a *stale* cursor
+ *   position — typically wherever the user's hardware trackpad last left
+ *   it, since hardware input keeps merging into the same HID stream.
+ *
+ *   That stale read shows up at the call site as a coordinate-mismatch
+ *   bug: an automation sequence like `moveMouse(target); clickMouse(LEFT)`
+ *   plants the click at the user's hardware cursor instead of the
+ *   intended target, because `toggleMouse` uses `getMousePos()` to build
+ *   the click event's location. We've seen this break agent-driven
+ *   computer-use clicks on Retina macOS specifically (cursor visibly
+ *   moves to the target, but the click fires at the user's real cursor).
+ *
+ *   `CGWarpMouseCursorPosition` resolves this by *immediately* writing
+ *   the cursor position into the windowserver state — no queue, no
+ *   merger window with hardware input. We still post the synthetic move
+ *   event so any app listening on the HID tap gets the kCGEventMouseMoved
+ *   signal it expects (apps that track cursor via event taps rather than
+ *   polling won't notice a warp alone). Warp + post together gives both
+ *   immediate position sync AND an event for tap subscribers. */
 void moveMouse(MMPoint point) {
   CGPoint position = CGPointMake(point.x, point.y);
   // Create an HID hardware event source
@@ -88,6 +111,11 @@ void moveMouse(MMPoint point) {
     CFRelease(evt);
   }
   CFRelease(src);
+
+  // Force the cursor position to commit synchronously so subsequent
+  // getMousePos() reads see the new location. See the function header
+  // for the full reasoning.
+  CGWarpMouseCursorPosition(position);
 }
 
 void dragMouse(MMPoint point, const MMMouseButton button) {
