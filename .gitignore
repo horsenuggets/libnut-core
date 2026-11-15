@@ -6,3 +6,8 @@ prebuilds/
 .cache
 cmake-build-debug
 .DS_Store
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
